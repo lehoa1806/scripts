@@ -1,2 +1,2 @@
-# testing
-Testing
+# Some manual scripts
+- AWS stuffs

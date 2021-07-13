@@ -1,0 +1,42 @@
+#!/bin/bash
+#
+#
+# Help command
+
+
+_confirm_the_command() {
+    while true; do
+        read -p "Proceed ? [y/n] : " key
+        case $key in
+            [Yy]*) break;;
+            [Nn]*) return 0;;
+        esac
+    done
+}
+
+
+_invoke_command() {
+    command_str="$@"
+    command_len=${#command_str}
+    invoking_str="Invoking: "
+    invoking_len=${#invoking_str}
+    len=$(expr $command_len + $invoking_len)
+
+    if [ $len -gt $(tput cols) ]; then
+        line_len=$(tput cols)
+    else
+        line_len=$len
+    fi
+
+    printf "%*s\n" $line_len | tr " " "."
+    printf "Invoking: %s\n" "$command_str"
+    printf "%*s\n" $line_len | tr " " "."
+
+    eval "$command_str"
+}
+
+
+_die() {
+    echo $@
+    return 1
+}

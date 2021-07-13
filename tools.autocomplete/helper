@@ -4,6 +4,26 @@
 # Help command
 
 
+_check_eligible_options() {
+    echo ${@}
+    echo ${_eligibleOptions}
+    _found=0
+    for _elopt in $_eligibleOptions; do
+        echo $_elopt
+        echo "1111"
+        case $1 in
+            $_elopt)
+                _found=1
+                break;
+                ;;
+        esac
+    done
+    if [ $_found -eq 0 ]; then
+        _die "Option $1 is not supported. Try help for more information."
+    fi
+}
+
+
 _confirm_the_command() {
     while true; do
         read -p "Proceed ? [y/n] : " key

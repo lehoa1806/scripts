@@ -1,0 +1,355 @@
+#!/bin/bash
+#
+#
+#
+
+# Load helper
+source_dir=$(dirname "${0}")
+. ${source_dir}/helper
+
+OPTIONS=("aws" "scp" "ssh" "validate" "mix" "help")
+
+AWS_OPTIONS=("dynamodb" "s3")
+AWS_DYNAMODB_OPTIONS=("delete-item" "describe-table" "get-item" "list-tables" "query" "scan")
+AWS_DYNAMODB_QUERY_OPTIONS=("tasks" "data")  // TODO: Update it
+AWS_DYNAMODB_GET_ITEM_OPTIONS=("tasks" "data")  // TODO: Update it
+
+AWS_S3_OPTIONS=("cp" "ls" "sync")
+
+SSH_OPTIONS=("aws" "gcp" "ip" "help")
+SCP_OPTIONS=("aws" "gcp" "ip" "help")
+
+VALIDATE_OPTIONS=("isort" "flake8" "mypy" "help")
+VALIDATE_ISORT_OPTIONS=("committed" "file")
+VALIDATE_FLAKE8_OPTIONS=("committed" "file")
+VALIDATE_MYPY_OPTIONS=("committed" "file")
+
+MIX_OPTIONS=("help")
+
+
+CUSTOM_TYPESHED_DIR="$PATH_TO_TYPESHED/typeshed"
+USER="ubuntu"
+WORKSPACE="/home/ubuntu/"
+
+
+_eligibleOptions=""
+
+
+_aws_dynamodb_query() {
+    _eligibleOptions=${AWS_DYNAMODB_QUERY_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        tasks)
+            shift 1
+            local key_conditions="'{\"task_id\": {\"AttributeValueList\": [{\"S\": \"$@\"}], \"ComparisonOperator\": \"EQ\"}}'"
+            local query_filter="'{\"status\": {\"ComparisonOperator\": \"NE\", \"AttributeValueList\": [ {\"S\": \"done\"} ]}}'"
+            _invoke_command "aws dynamodb query --table-name tasks --key-conditions $key_conditions --query-filter $query_filter"
+            ;;
+        data)
+            shift 1
+            local key_conditions="'{\"row_index\": {\"AttributeValueList\": [{\"S\": \"$@\"}], \"ComparisonOperator\": \"EQ\"}}'"
+            _invoke_command "aws dynamodb query --table-name data --key-conditions $key_conditions"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_aws_dynamodb_get_item() {
+    _eligibleOptions=${AWS_DYNAMODB_GET_ITEM_OPTIONS}
+    _check_eligible_options $1
+
+    case "$1" in
+        tasks)
+            shift 1
+            local key_conditions="'{\"task_id\": {\"S\": \"$1\"},\"item\": {\"S\": \"$2\"}}'"
+            _invoke_command "aws dynamodb get-item --table-name tasks --key $key_conditions"
+            ;;
+        data)
+            shift 1
+            local key_conditions="'{\"row_index\": {\"AttributeValueList\": [{\"S\": \"$@\"}], \"ComparisonOperator\": \"EQ\"}}'"
+            _invoke_command "aws dynamodb query --table-name data --key-conditions $key_conditions"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_aws_dynamodb() {
+    _eligibleOptions=${AWS_DYNAMODB_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        delete-item)
+            shift 1
+            _mix_help
+            ;;
+        describe-table)
+            shift 1
+            _invoke_command "aws dynamodb describe-table --table-name $@"
+            ;;
+        get-item)
+            shift 1
+            _aws_dynamodb_get_item "$@"
+            ;;
+        list-tables)
+            shift 1
+            _invoke_command "aws dynamodb list-tables"
+            ;;
+        query)
+            shift 1
+            _aws_dynamodb_query "$@"
+            ;;
+        scan)
+            shift 1
+            _invoke_command "aws dynamodb scan --table-name $@"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_aws_s3() {
+    _eligibleOptions=${AWS_S3_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        cp)
+            shift 1
+            _invoke_command "aws s3 cp $@"
+            ;;
+        ls)
+            shift 1
+            _invoke_command "aws s3 ls $@"
+            ;;
+        sync)
+            shift 1
+            _invoke_command "aws s3 sync $@"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_aws() {
+    _eligibleOptions=${AWS_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        dynamodb)
+            shift 1
+            _aws_dynamodb $@
+            ;;
+        s3)
+            shift 1
+            _aws_s3 $@
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_ssh() {
+    _eligibleOptions=${SSH_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        aws)
+            shift 1
+            _invoke_command "ssh -i ${SSH_KEY} ${USER}@${AWS_VM_IP}"
+            ;;
+        gcp)
+            shift 1
+            _invoke_command "ssh -i ${SSH_KEY} ${USER}@${GCP_VM_IP}"
+            ;;
+        ip)
+            shift 1
+            _invoke_command "ssh -i ${SSH_KEY} ${USER}@$@"
+            ;;
+        help)
+            shift 1
+            _ssh_usage
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_ssh_usage() {
+    echo "SSH usage: Working"
+    return 0
+}
+
+
+_scp() {
+    _eligibleOptions=${SCP_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        aws)
+            shift 1
+            _invoke_command "scp -i ${SSH_KEY} $@ ${USER}@${AWS_VM_IP}:${WORKSPACE}"
+            ;;
+        gcp)
+            shift 1
+            _invoke_command "scp -i ${SSH_KEY} $@ ${USER}@${GCP_VM_IP}:${WORKSPACE}"
+            ;;
+        ip)
+            shift 1
+            address=$1
+            shift 1
+            _invoke_command "scp -i ${SSH_KEY} $@ ${USER}@$address:${WORKSPACE}"
+            ;;
+        help)
+            shift 1
+            _scp_usage
+            ;;
+        *)
+            ;;
+    esac
+}
+
+_scp_usage() {
+    echo "SSH usage: Working"
+    return 0
+}
+
+
+_validate_tools() {
+    _eligibleOptions=${VALIDATE_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        isort)
+            shift 1
+            _eligibleOptions=${VALIDATE_ISORT_OPTIONS}
+            _check_eligible_options $@
+            case "$1" in
+                committed)
+                    shift 1
+                    _invoke_command 'isort $(git show --pretty="" --name-only --diff-filter=MARC | grep ".py")'
+                    ;;
+                file)
+                    shift 1
+                    _invoke_command "isort $@"
+                    ;;
+                *)
+                    ;;
+            esac
+            ;;
+        flake8)
+            shift 1
+            _eligibleOptions=${VALIDATE_FLAKE8_OPTIONS}
+            _check_eligible_options $@
+            case "$1" in
+                committed)
+                    shift 1
+                    _invoke_command 'flake8 $(git show --pretty="" --name-only --diff-filter=MARC | grep ".py")'
+                    ;;
+                file)
+                    shift 1
+                    _invoke_command "flake8 $@"
+                    ;;
+                *)
+                    ;;
+            esac
+            ;;
+        mypy)
+            shift 1
+            _eligibleOptions=${VALIDATE_MYPY_OPTIONS}
+            _check_eligible_options $@
+            case "$1" in
+                committed)
+                    shift 1
+                    _invoke_command "mypy --custom-typeshed-dir=${CUSTOM_TYPESHED_DIR} $(git show --pretty=\"\" --name-only --diff-filter=MARC | grep \".py\")"
+                    ;;
+                file)
+                    shift 1
+                    _invoke_command "mypy --custom-typeshed-dir=${CUSTOM_TYPESHED_DIR} $@"
+                    ;;
+                *)
+                    ;;
+            esac
+            ;;
+        help)
+            shift 1
+            _validate_usage
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_validate_usage() {
+    echo "Validation usage: Working"
+    return 0
+}
+
+
+_mix_tools() {
+    _eligibleOptions=${MIX_OPTIONS}
+    _check_eligible_options $@
+
+    case "$1" in
+        help)
+            _mix_help
+            ;;
+        *)
+            ;;
+    esac
+}
+
+
+_mix_help() {
+    echo "mix usage: Working"
+    return 0
+}
+
+
+_usage() {
+    echo "I'm too lazy to remember all commands which I usually use."
+    echo "That was why I wrote this script."
+    return 0
+}
+
+
+#main function#################################################
+_eligibleOptions=${OPTIONS}
+_check_eligible_options $@
+
+case "$1" in
+    aws)
+        shift 1
+        _aws $@
+        ;;
+    scp)
+        shift 1
+        _scp $@
+        ;;
+    ssh)
+        shift 1
+        _ssh $@
+        ;;
+    validate)
+        shift 1
+        _validate_tools $@
+        ;;
+    mix)
+        shift 1
+        _mix_tools $@
+        ;;
+    help)
+        shift 1
+        _usage
+        ;;
+    *)
+    ;;
+esac
